@@ -4,18 +4,19 @@ import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+
+import model.Question;
+import model.news.News;
+import model.news.NewsList;
 
 import org.simpleframework.xml.Serializer;
 import org.simpleframework.xml.core.Persister;
 import org.simpleframework.xml.stream.Format;
 import org.simpleframework.xml.stream.HyphenStyle;
 import org.simpleframework.xml.stream.Style;
-
-import model.Question;
-import model.news.News;
-import model.news.NewsList;
 
 public class SQLiteJDBC
 {
@@ -43,7 +44,7 @@ public class SQLiteJDBC
 					Class.forName("org.sqlite.JDBC");
 					stmt = c.createStatement();
 					String sql =	 "CREATE TABLE USERS" +
-										"(ID INT 				PRIMARY KEY 		NOT NULL," +
+										"(ID INT				PRIMARY KEY 		AUTOINCREMENT," +
 										"NICKNAME			TEXT					NOT NULL," +
 										"PASSWORD		TEXT					NOT NULL," +
 										"EMAIL				TEXT					NOT NULL," +
@@ -70,9 +71,10 @@ public class SQLiteJDBC
 					Class.forName("org.sqlite.JDBC");
 					stmt = c.createStatement();
 					String sql = 	"CREATE TABLE GAMES"	+
-										"(ID INT 					PRIMARY KEY 			AUTOINCREMENT			NOT NULL," +
+										"(ID INT					PRIMARY KEY 			AUTOINCREMENT," +
 										"PLAYER1					INT							NOT NULL," +
 										"PLAYER2					INT							NOT NULL," +
+										"PERIOD					INT							NOT NULL," +
 										"SUBJECTPOOL		INT							NOT NULL," +
 										"QUESTION1			INT											," +
 										"QUESTION2			INT											," +
@@ -112,7 +114,7 @@ public class SQLiteJDBC
 					Class.forName("org.sqlite.JDBC");
 					stmt = c.createStatement();
 					String sql = 	"CREATE TABLE QUESTIONS"	+
-										"(ID INT 					PRIMARY KEY			NOT NULL," +
+										"(ID INT					PRIMARY KEY			AUTOINCREMENT," +
 										"SUBJECT				INT							NOT NULL," +
 										"QUESTION			TEXT						NOT NULL," +
 										"ANSWER_A			TEXT						NOT NULL," + //Answer_A is always the correct answer
@@ -455,16 +457,22 @@ public class SQLiteJDBC
 		
 	public int createGame(int challengedPersonID, int challengingPersonID)
 	{
-		Statement stmt = null;
+		PreparedStatement pstmt = null;
+		int key = -1;
 		try
 		{
-			//XXX SUBJECTPOOL ERSTELLEN
-			stmt = c.createStatement();
-			String sql =	 "INSERT INTO GAMES(PLAYER1, PLAYER2, SUBJECTPOOL, POINTSPLAYER1, POINTSPLAYER2) " +
-								"VALUES('" + challengedPersonID + "', '" + challengingPersonID + "', '" + subjectpool + "', '" + "0" + "', '" + "0" + "');";
-			stmt.executeUpdate(sql);
+			int subjectpool = subjArrayBooleanToInt(createSubjectPool(challengedPersonID, challengingPersonID));
+			String sql =	 "INSERT INTO GAMES(PLAYER1, PLAYER2, PERIOD, SUBJECTPOOL, POINTSPLAYER1, POINTSPLAYER2) " +
+								"VALUES('" + challengedPersonID + "', '" + challengingPersonID + "', '" + 0 + "', '"+ subjectpool + "', '" + "0" + "', '" + "0" + "');";
+			pstmt = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+			pstmt.executeUpdate(sql);
 			
-			stmt.close();
+			ResultSet keys = pstmt.getGeneratedKeys();
+			keys.next();
+			key = keys.getInt(1);
+			keys.close();
+			
+			pstmt.close();
 			c.commit();			
 		}
 		catch(Exception e)
@@ -473,16 +481,154 @@ public class SQLiteJDBC
 	        System.exit(0);
 		}
 		
-		//XXX RETURN ID OF GAME														!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		return key;
 	}
 	
-	public int[] getSubjectPool(int gameID)
+	public boolean[] createSubjectPool(int player1, int player2)
 	{
+		boolean[] player1SubjVisited = getSubjVisited(player1);
+		boolean[] player2SubjVisited = getSubjVisited(player2);
+		boolean[] subjectPool = new boolean[16];
 		
+		for(int i = 0; i < 15; i++)
+		{
+			if(player1SubjVisited[i] && player2SubjVisited[i])
+			{
+				subjectPool[i] = true;
+			}
+			else
+			{
+				subjectPool[i] = false;
+			}
+		}
+		
+		return subjectPool;
+	}
+	
+	public boolean[] getSubjectPool(int gameID)
+	{
+		Statement stmt = null;
+		try
+		{
+			stmt = c.createStatement();
+			String sql = "SELECT SUBJECTPOOL FROM GAMES WHERE ID = '" + gameID + "';";
+			ResultSet rs = stmt.executeQuery(sql);
+			
+			if(rs.next())
+			{
+				int subjectpool = rs.getInt("subjectpool");
+				rs.close();
+				stmt.close();
+				
+				String subjectpoolString = subjectpool + "";
+				int[] subjectpoolArrayInt = new int[16];
+				boolean[] subjectpoolArrayBoolean = new boolean[16];
+				
+				for(int i = 0; i < 15; i++)
+				{
+					subjectpoolArrayInt[i] = Integer.parseInt(subjectpoolString.charAt(i) + "");
+				}
+				
+				for(int j = 0; j < 15; j++)
+				{
+					if(subjectpoolArrayInt[j] == 1)
+						subjectpoolArrayBoolean[j] = true;
+					else
+						subjectpoolArrayBoolean[j] = false;
+				}
+				
+				rs.close();
+				stmt.close();
+				return subjectpoolArrayBoolean;
+			}
+			else
+			{
+				rs.close();
+				stmt.close();
+				return null;
+			}
+		}
+		catch(Exception e)
+		{
+			System.err.println( e.getClass().getName() + ": " + e.getMessage() );
+	        System.exit(0);
+		}
+		return null;
+	}
+	
+	public boolean[] getSubjVisited(int playerID)
+	{
+		Statement stmt = null;
+		try
+		{
+			stmt = c.createStatement();
+			String sql = "SELECT SUBJVISITED FROM USERS WHERE ID='" + playerID + "';";
+			ResultSet rs = stmt.executeQuery(sql);
+			
+			if(rs.next())
+			{
+				int subjVisited = rs.getInt("subjVisited");
+				rs.close();
+				stmt.close();
+				
+				String subjVisitedString = subjVisited + "";
+				int[] subjVisitedArrayInt = new int[16];
+				boolean[] subjVisitedArrayBoolean = new boolean[16];
+				
+				for(int i = 0; i < 15; i++)
+				{
+					subjVisitedArrayInt[i] = Integer.parseInt(subjVisitedString.charAt(i) + "");
+				}
+				
+				for(int j = 0; j < 15; j++)
+				{
+					if(subjVisitedArrayInt[j] == 1)
+						subjVisitedArrayBoolean[j] = true;
+					else
+						subjVisitedArrayBoolean[j] = false;
+				}
+				
+				return subjVisitedArrayBoolean;
+			}
+			else
+			{
+				rs.close();
+				stmt.close();
+				return null;
+			}
+		}
+		catch(Exception e)
+		{
+			System.err.println(e.getClass().getName() + ": " + e.getMessage());
+	        System.exit(0);
+		}
+		return null;
+	}
+	
+	private int subjArrayBooleanToInt(boolean[] subjArrayBoolean)
+	{
+		String subjString = "";
+		
+		for(int i = 0; i < 15; i++)
+		{
+			if(subjArrayBoolean[i])
+			{
+				subjString += "1";
+			}
+			else
+			{
+				subjString += "0";
+			}
+		}
+		
+		int subjInt = Integer.parseInt(subjString);
+		return subjInt;
 	}
 	
 	public void subjectChosen(int gameID, int subject)
 	{
+		
+		
 		//Fach wird nicht direkt an Datenbank übergeben; es werden die nächsten 3 Fragen an die Datenbank übergeben
 		//SELECT * FROM questions WHERE subject = subject ORDER BY RANDOM() LIMIT 1;
 	}

@@ -18,7 +18,11 @@ public class RegisterHandler extends AbstractHandler
 	public String handle(String httpBody)
 	{
 		RegisterRequest request = (RegisterRequest)parseXML(httpBody, RegisterRequest.class);
+<<<<<<< HEAD
 				
+=======
+		
+>>>>>>> 3cd9fb25b6b7750533ed447e0f56f1528a217fb8
 		if(request != null)
 		{
 			String nickname = request.getNickname();
